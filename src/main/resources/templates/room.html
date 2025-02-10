@@ -42,7 +42,6 @@
         </div>
     </div>
 </div>
-
 <script th:inline="javascript">
     const roomId = [[${roomId}]];
     let pc;
@@ -50,8 +49,6 @@
     let ws;
     let isAudioMuted = false;
     let isVideoOff = false;
-    let retryCount = 0;
-    const maxRetries = 3;
 
     function initializeWebSocket() {
         if (ws && ws.readyState === WebSocket.OPEN) return;
@@ -60,28 +57,35 @@
 
         ws.onopen = () => {
             console.log('WebSocket Connected');
-            initializePeerConnection();
             ws.send(JSON.stringify({ type: 'join', roomId: roomId }));
+            initializePeerConnection();
         };
 
         ws.onerror = (error) => {
             console.error('WebSocket Error:', error);
-            if (retryCount < maxRetries) {
-                retryCount++;
-                setTimeout(initializeWebSocket, 2000 * retryCount);
-            } else {
-                alert('Unable to establish connection. Please check your internet connection and try again.');
+        };
+
+        ws.onmessage = async (event) => {
+            const message = JSON.parse(event.data);
+            try {
+                if (message.type === 'offer') {
+                    await pc.setRemoteDescription(new RTCSessionDescription(message.offer));
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    ws.send(JSON.stringify({ type: 'answer', answer: answer, roomId: roomId }));
+                } else if (message.type === 'answer') {
+                    await pc.setRemoteDescription(new RTCSessionDescription(message.answer));
+                } else if (message.type === 'candidate') {
+                    await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
+                }
+            } catch (error) {
+                console.error('Error handling message:', error);
             }
         };
 
         ws.onclose = () => {
-            console.log('WebSocket connection closed');
-            if (retryCount < maxRetries) {
-                setTimeout(initializeWebSocket, 3000);
-            }
+            console.log('WebSocket Disconnected');
         };
-
-        ws.onmessage = handleWebSocketMessage;
     }
 
     function initializePeerConnection() {
@@ -92,17 +96,9 @@
             ]
         });
 
-        if (localStream) {
-            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-        }
-
         pc.onicecandidate = event => {
-            if (event.candidate && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'candidate',
-                    candidate: event.candidate,
-                    roomId: roomId
-                }));
+            if (event.candidate) {
+                ws.send(JSON.stringify({ type: 'candidate', candidate: event.candidate, roomId: roomId }));
             }
         };
 
@@ -110,23 +106,9 @@
             document.getElementById('remoteVideo').srcObject = event.streams[0];
             document.getElementById('waitingMessage').style.display = 'none';
         };
-    }
 
-    async function handleWebSocketMessage(event) {
-        const message = JSON.parse(event.data);
-        try {
-            if (message.type === 'offer') {
-                await pc.setRemoteDescription(new RTCSessionDescription(message.offer));
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                ws.send(JSON.stringify({ type: 'answer', answer: answer, roomId: roomId }));
-            } else if (message.type === 'answer') {
-                await pc.setRemoteDescription(new RTCSessionDescription(message.answer));
-            } else if (message.type === 'candidate') {
-                await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
-            }
-        } catch (error) {
-            console.error('Error handling message:', error);
+        if (localStream) {
+            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
         }
     }
 
@@ -145,7 +127,7 @@
     }
 
     async function createOffer() {
-        if (!pc || !ws || ws.readyState !== WebSocket.OPEN) return;
+        if (!pc || ws.readyState !== WebSocket.OPEN) return;
 
         try {
             const offer = await pc.createOffer();
@@ -156,16 +138,34 @@
         }
     }
 
-    // Initialize everything
-    initializeWebSocket();
-    initializeMediaStream();
+    function toggleAudio() {
+        isAudioMuted = !isAudioMuted;
+        localStream.getAudioTracks()[0].enabled = !isAudioMuted;
+    }
 
-    // Clean up
+    function toggleVideo() {
+        isVideoOff = !isVideoOff;
+        localStream.getVideoTracks()[0].enabled = !isVideoOff;
+    }
+
+    function endCall() {
+        if (localStream) localStream.getTracks().forEach(track => track.stop());
+        if (pc) pc.close();
+        if (ws) ws.close();
+        window.location.href = "/";
+    }
+
+    window.onload = async () => {
+        initializeWebSocket();
+        await initializeMediaStream();
+    };
+
     window.onunload = () => {
         if (localStream) localStream.getTracks().forEach(track => track.stop());
         if (pc) pc.close();
         if (ws) ws.close();
     };
 </script>
+
 </body>
 </html>

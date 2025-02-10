@@ -8,10 +8,16 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 @Configuration
 @EnableWebSocket
 public class WebSocketConfig implements WebSocketConfigurer {
+    private final SignalingHandler signalingHandler;
+
+    public WebSocketConfig(SignalingHandler signalingHandler) {
+        this.signalingHandler = signalingHandler;
+    }
+
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(new SignalingHandler(), "/signal")
-                .setAllowedOriginPatterns("https://video-call-application-production.up.railway.app")
+        registry.addHandler(signalingHandler, "/signal")
+                .setAllowedOriginPatterns("*") // Allow all origins
                 .withSockJS();
     }
 }

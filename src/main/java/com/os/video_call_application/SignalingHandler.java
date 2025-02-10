@@ -12,30 +12,26 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class SignalingHandler extends TextWebSocketHandler {
-    private Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
-    private Gson gson = new Gson();
+    private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
+    private final Gson gson = new Gson();
 
     @Override
     public void handleTextMessage(WebSocketSession session, TextMessage message) throws IOException {
         SignalMessage signalMessage = gson.fromJson(message.getPayload(), SignalMessage.class);
+        String roomId = signalMessage.getRoomId();
 
         if ("join".equals(signalMessage.getType())) {
-            sessions.put(signalMessage.getRoomId(), session);
+            sessions.put(roomId, session);
         } else {
-            WebSocketSession peerSession = sessions.get(signalMessage.getRoomId());
-            if (peerSession != null && peerSession.isOpen()) {
+            WebSocketSession peerSession = sessions.get(roomId);
+            if (peerSession != null && peerSession.isOpen() && !peerSession.equals(session)) {
                 peerSession.sendMessage(message);
             }
         }
     }
-}
 
-class SignalMessage {
-    private String type;
-    private String roomId;
-
-    public String getType() { return type; }
-    public String getRoomId() { return roomId; }
-    public void setType(String type) { this.type = type; }
-    public void setRoomId(String roomId) { this.roomId = roomId; }
+    @Override
+    public void afterConnectionClosed(WebSocketSession session, org.springframework.web.socket.CloseStatus status) {
+        sessions.values().remove(session);
+    }
 }
