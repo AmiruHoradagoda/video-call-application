@@ -31,14 +31,20 @@ public class SignalingHandler extends TextWebSocketHandler {
             }
         } catch (Exception e) {
             logger.error("Error handling message: ", e);
+            try {
+                session.sendMessage(new TextMessage(gson.toJson(Map.of(
+                        "type", "error",
+                        "error", "Failed to process message"
+                ))));
+            } catch (IOException ex) {
+                logger.error("Error sending error message: ", ex);
+            }
         }
     }
 
     private void handleJoinRoom(WebSocketSession session, String roomId) throws IOException {
         rooms.computeIfAbsent(roomId, k -> new ConcurrentHashMap<>())
                 .put(session, session.getId());
-
-        // Notify other participants in the room
         notifyRoomParticipants(roomId, session, "user-joined");
     }
 
@@ -90,8 +96,6 @@ public class SignalingHandler extends TextWebSocketHandler {
                 }
             }
         });
-
-        // Clean up empty rooms
         rooms.entrySet().removeIf(entry -> entry.getValue().isEmpty());
     }
 }

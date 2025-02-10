@@ -7,7 +7,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 @Controller
 public class VideoController {
-
     @GetMapping("/")
     public String index() {
         return "index";

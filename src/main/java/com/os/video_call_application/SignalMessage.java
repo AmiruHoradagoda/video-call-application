@@ -7,7 +7,6 @@ public class SignalMessage {
     private Object answer;
     private Object candidate;
 
-    // Getters and Setters
     public String getType() { return type; }
     public String getRoomId() { return roomId; }
     public Object getOffer() { return offer; }
