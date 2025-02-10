@@ -10,14 +10,14 @@
     <div class="bg-white rounded-lg shadow-lg p-6">
         <div class="flex justify-between items-center mb-6">
             <h2 class="text-2xl font-bold">Room: <span th:text="${roomId}" class="text-blue-600"></span></h2>
-            <button onclick="copyRoomId()" class="bg-blue-500 text-white px-4 py-2 rounded">
+            <button onclick="copyRoomId()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
                 <i class="fas fa-copy mr-2"></i>Copy Room ID
             </button>
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="relative">
-                <video id="localVideo" autoplay playsinline class="w-full rounded-lg bg-black"></video>
+                <video id="localVideo" autoplay playsinline muted class="w-full rounded-lg bg-black"></video>
                 <p class="absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded">You</p>
             </div>
             <div class="relative">
@@ -30,18 +30,19 @@
         </div>
 
         <div class="flex justify-center space-x-4 mt-6">
-            <button onclick="toggleAudio()" id="audioBtn" class="bg-gray-500 text-white px-6 py-3 rounded-full">
+            <button onclick="toggleAudio()" id="audioBtn" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-full">
                 <i class="fas fa-microphone"></i>
             </button>
-            <button onclick="toggleVideo()" id="videoBtn" class="bg-gray-500 text-white px-6 py-3 rounded-full">
+            <button onclick="toggleVideo()" id="videoBtn" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-full">
                 <i class="fas fa-video"></i>
             </button>
-            <button onclick="endCall()" class="bg-red-500 text-white px-6 py-3 rounded-full">
+            <button onclick="endCall()" class="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-full">
                 <i class="fas fa-phone-slash"></i>
             </button>
         </div>
     </div>
 </div>
+
 <script th:inline="javascript">
     const roomId = [[${roomId}]];
     let pc;
@@ -49,62 +50,133 @@
     let ws;
     let isAudioMuted = false;
     let isVideoOff = false;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
 
-    function initializeWebSocket() {
+    async function initializeWebSocket() {
         if (ws && ws.readyState === WebSocket.OPEN) return;
 
-        ws = new WebSocket("wss://video-call-application-production.up.railway.app/signal");
+        try {
+            ws = new WebSocket(`wss://${window.location.host}/signal`);
 
-        ws.onopen = () => {
-            console.log('WebSocket Connected');
-            ws.send(JSON.stringify({ type: 'join', roomId: roomId }));
-            initializePeerConnection();
-        };
+            ws.onopen = () => {
+                console.log('WebSocket Connected');
+                reconnectAttempts = 0;
+                ws.send(JSON.stringify({ type: 'join', roomId: roomId }));
+                initializePeerConnection();
+            };
 
-        ws.onerror = (error) => {
-            console.error('WebSocket Error:', error);
-        };
+            ws.onerror = (error) => {
+                console.error('WebSocket Error:', error);
+                handleWebSocketError();
+            };
 
-        ws.onmessage = async (event) => {
-            const message = JSON.parse(event.data);
-            try {
-                if (message.type === 'offer') {
-                    await pc.setRemoteDescription(new RTCSessionDescription(message.offer));
-                    const answer = await pc.createAnswer();
-                    await pc.setLocalDescription(answer);
-                    ws.send(JSON.stringify({ type: 'answer', answer: answer, roomId: roomId }));
-                } else if (message.type === 'answer') {
-                    await pc.setRemoteDescription(new RTCSessionDescription(message.answer));
-                } else if (message.type === 'candidate') {
-                    await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
+            ws.onmessage = async (event) => {
+                const message = JSON.parse(event.data);
+                try {
+                    switch (message.type) {
+                        case 'offer':
+                            await handleOffer(message);
+                            break;
+                        case 'answer':
+                            await handleAnswer(message);
+                            break;
+                        case 'candidate':
+                            await handleCandidate(message);
+                            break;
+                        case 'user-joined':
+                            document.getElementById('waitingMessage').style.display = 'none';
+                            break;
+                        case 'user-left':
+                            document.getElementById('waitingMessage').style.display = 'flex';
+                            break;
+                    }
+                } catch (error) {
+                    console.error('Error handling message:', error);
                 }
-            } catch (error) {
-                console.error('Error handling message:', error);
-            }
-        };
+            };
 
-        ws.onclose = () => {
-            console.log('WebSocket Disconnected');
-        };
+            ws.onclose = () => {
+                console.log('WebSocket Disconnected');
+                handleWebSocketError();
+            };
+        } catch (error) {
+            console.error('WebSocket initialization error:', error);
+            handleWebSocketError();
+        }
+    }
+
+    async function handleOffer(message) {
+        await pc.setRemoteDescription(new RTCSessionDescription(message.offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        ws.send(JSON.stringify({ type: 'answer', answer: answer, roomId: roomId }));
+    }
+
+    async function handleAnswer(message) {
+        await pc.setRemoteDescription(new RTCSessionDescription(message.answer));
+    }
+
+    async function handleCandidate(message) {
+        if (message.candidate) {
+            try {
+                await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
+            } catch (error) {
+                console.error('Error adding ICE candidate:', error);
+            }
+        }
+    }
+
+    function handleWebSocketError() {
+        if (reconnectAttempts < maxReconnectAttempts) {
+            reconnectAttempts++;
+            setTimeout(() => {
+                console.log(`Attempting to reconnect... (${reconnectAttempts}/${maxReconnectAttempts})`);
+                initializeWebSocket();
+            }, 2000 * reconnectAttempts);
+        } else {
+            alert('Connection failed. Please refresh the page to try again.');
+        }
     }
 
     function initializePeerConnection() {
+        if (pc) {
+            pc.close();
+        }
+
         pc = new RTCPeerConnection({
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
+                { urls: 'stun:stun1.l.google.com:19302' },
+                {
+                    urls: 'turn:numb.viagenie.ca',
+                    username: 'webrtc@live.com',
+                    credential: 'muazkh'
+                }
             ]
         });
 
         pc.onicecandidate = event => {
-            if (event.candidate) {
-                ws.send(JSON.stringify({ type: 'candidate', candidate: event.candidate, roomId: roomId }));
+            if (event.candidate && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'candidate',
+                    candidate: event.candidate,
+                    roomId: roomId
+                }));
             }
         };
 
         pc.ontrack = event => {
             document.getElementById('remoteVideo').srcObject = event.streams[0];
             document.getElementById('waitingMessage').style.display = 'none';
+        };
+
+        pc.oniceconnectionstatechange = () => {
+            if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+                document.getElementById('waitingMessage').style.display = 'flex';
+                document.getElementById('waitingMessage').textContent = 'Connection lost. Attempting to reconnect...';
+                handleConnectionFailure();
+            }
         };
 
         if (localStream) {
@@ -114,15 +186,23 @@
 
     async function initializeMediaStream() {
         try {
-            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            localStream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                },
+                audio: true
+            });
             document.getElementById('localVideo').srcObject = localStream;
+
             if (pc) {
                 localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
             }
-            createOffer();
+
+            await createOffer();
         } catch (error) {
             console.error('Error accessing media devices:', error);
-            alert('Failed to access camera/microphone. Please check permissions.');
+            alert('Failed to access camera/microphone. Please check permissions and ensure no other application is using them.');
         }
     }
 
@@ -132,38 +212,71 @@
         try {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
-            ws.send(JSON.stringify({ type: 'offer', offer: pc.localDescription, roomId: roomId }));
+            ws.send(JSON.stringify({
+                type: 'offer',
+                offer: pc.localDescription,
+                roomId: roomId
+            }));
         } catch (error) {
             console.error('Error creating offer:', error);
+            alert('Failed to establish connection. Please refresh the page.');
         }
     }
 
     function toggleAudio() {
-        isAudioMuted = !isAudioMuted;
-        localStream.getAudioTracks()[0].enabled = !isAudioMuted;
+        if (!localStream) return;
+
+        const audioTrack = localStream.getAudioTracks()[0];
+        if (audioTrack) {
+            isAudioMuted = !isAudioMuted;
+            audioTrack.enabled = !isAudioMuted;
+            document.getElementById('audioBtn').innerHTML =
+                isAudioMuted ? '<i class="fas fa-microphone-slash"></i>' : '<i class="fas fa-microphone"></i>';
+            document.getElementById('audioBtn').classList.toggle('bg-red-500');
+        }
     }
 
     function toggleVideo() {
-        isVideoOff = !isVideoOff;
-        localStream.getVideoTracks()[0].enabled = !isVideoOff;
+        if (!localStream) return;
+
+        const videoTrack = localStream.getVideoTracks()[0];
+        if (videoTrack) {
+            isVideoOff = !isVideoOff;
+            videoTrack.enabled = !isVideoOff;
+            document.getElementById('videoBtn').innerHTML =
+                isVideoOff ? '<i class="fas fa-video-slash"></i>' : '<i class="fas fa-video"></i>';
+            document.getElementById('videoBtn').classList.toggle('bg-red-500');
+        }
+    }
+
+    function copyRoomId() {
+        navigator.clipboard.writeText(roomId)
+            .then(() => alert('Room ID copied to clipboard!'))
+            .catch(err => console.error('Failed to copy room ID:', err));
     }
 
     function endCall() {
-        if (localStream) localStream.getTracks().forEach(track => track.stop());
+        if (localStream) {
+            localStream.getTracks().forEach(track => track.stop());
+        }
         if (pc) pc.close();
         if (ws) ws.close();
         window.location.href = "/";
     }
 
+    async function handleConnectionFailure() {
+        if (pc) pc.close();
+        await initializePeerConnection();
+        await createOffer();
+    }
+
     window.onload = async () => {
-        initializeWebSocket();
+        await initializeWebSocket();
         await initializeMediaStream();
     };
 
-    window.onunload = () => {
-        if (localStream) localStream.getTracks().forEach(track => track.stop());
-        if (pc) pc.close();
-        if (ws) ws.close();
+    window.onbeforeunload = () => {
+        endCall();
     };
 </script>
 

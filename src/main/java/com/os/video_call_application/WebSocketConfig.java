@@ -17,7 +17,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(signalingHandler, "/signal")
-                .setAllowedOriginPatterns("*") // Allow all origins
+                .setAllowedOrigins("*") // For development; restrict in production
                 .withSockJS();
     }
 }
