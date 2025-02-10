@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Video Call App</title>
+</head>
+<body>
+<h1>Video Call App</h1>
+<button onclick="createRoom()">Create Room</button>
+<input type="text" id="roomInput" placeholder="Enter Room ID">
+<button onclick="joinRoom()">Join Room</button>
+
+<script>
+    function createRoom() {
+        const roomId = Math.random().toString(36).substring(7);
+        window.location.href = '/room/' + roomId;
+    }
+
+    function joinRoom() {
+        const roomId = document.getElementById('roomInput').value;
+        window.location.href = '/room/' + roomId;
+    }
+</script>
+</body>
+</html>
