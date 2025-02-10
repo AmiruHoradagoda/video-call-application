@@ -2,25 +2,103 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <head>
     <title>Video Room</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
-<body>
-<h2>Room: <span th:text="${roomId}"></span></h2>
-<video id="localVideo" autoplay playsinline></video>
-<video id="remoteVideo" autoplay playsinline></video>
+<body class="bg-gray-100">
+<div class="container mx-auto p-4">
+    <div class="bg-white rounded-lg shadow-lg p-6">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-2xl font-bold">Room: <span th:text="${roomId}" class="text-blue-600"></span></h2>
+            <button onclick="copyRoomId()" class="bg-blue-500 text-white px-4 py-2 rounded">
+                <i class="fas fa-copy mr-2"></i>Copy Room ID
+            </button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+            <div class="relative">
+                <video id="localVideo" autoplay playsinline class="w-full rounded-lg bg-black"></video>
+                <p class="absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded">You</p>
+            </div>
+            <div class="relative">
+                <video id="remoteVideo" autoplay playsinline class="w-full rounded-lg bg-black"></video>
+                <p class="absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded">Remote User</p>
+                <div id="waitingMessage" class="absolute inset-0 flex items-center justify-center text-white bg-black bg-opacity-50">
+                    Waiting for someone to join...
+                </div>
+            </div>
+        </div>
+
+        <div class="flex justify-center space-x-4 mt-6">
+            <button onclick="toggleAudio()" id="audioBtn" class="bg-gray-500 text-white px-6 py-3 rounded-full">
+                <i class="fas fa-microphone"></i>
+            </button>
+            <button onclick="toggleVideo()" id="videoBtn" class="bg-gray-500 text-white px-6 py-3 rounded-full">
+                <i class="fas fa-video"></i>
+            </button>
+            <button onclick="endCall()" class="bg-red-500 text-white px-6 py-3 rounded-full">
+                <i class="fas fa-phone-slash"></i>
+            </button>
+        </div>
+    </div>
+</div>
 
 <script th:inline="javascript">
     const roomId = [[${roomId}]];
     const ws = new WebSocket('ws://localhost:8080/signal');
-    let pc = new RTCPeerConnection();
+    let pc = new RTCPeerConnection({
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' }
+        ]
+    });
+    let localStream;
+    let isAudioMuted = false;
+    let isVideoOff = false;
 
-    // Get local video stream
+    function copyRoomId() {
+        navigator.clipboard.writeText(roomId);
+        alert('Room ID copied to clipboard!');
+    }
+
+    function toggleAudio() {
+        if (localStream) {
+            isAudioMuted = !isAudioMuted;
+            localStream.getAudioTracks().forEach(track => track.enabled = !isAudioMuted);
+            document.getElementById('audioBtn').innerHTML =
+                `<i class="fas fa-microphone${isAudioMuted ? '-slash' : ''}"></i>`;
+        }
+    }
+
+    function toggleVideo() {
+        if (localStream) {
+            isVideoOff = !isVideoOff;
+            localStream.getVideoTracks().forEach(track => track.enabled = !isVideoOff);
+            document.getElementById('videoBtn').innerHTML =
+                `<i class="fas fa-video${isVideoOff ? '-slash' : ''}"></i>`;
+        }
+    }
+
+    function endCall() {
+        if (localStream) {
+            localStream.getTracks().forEach(track => track.stop());
+        }
+        if (pc) {
+            pc.close();
+        }
+        window.location.href = '/';
+    }
+
     navigator.mediaDevices.getUserMedia({video: true, audio: true})
         .then(stream => {
+            localStream = stream;
             document.getElementById('localVideo').srcObject = stream;
             stream.getTracks().forEach(track => pc.addTrack(track, stream));
+        })
+        .catch(error => {
+            console.error('Error accessing media devices:', error);
+            alert('Failed to access camera/microphone. Please check permissions.');
         });
 
-    // WebSocket signaling
     ws.onopen = () => {
         ws.send(JSON.stringify({type: 'join', roomId: roomId}));
     };
@@ -36,14 +114,15 @@
                 answer: answer,
                 roomId: roomId
             }));
+            document.getElementById('waitingMessage').style.display = 'none';
         } else if (message.type === 'answer') {
             await pc.setRemoteDescription(new RTCSessionDescription(message.answer));
+            document.getElementById('waitingMessage').style.display = 'none';
         } else if (message.type === 'candidate') {
             await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
         }
     };
 
-    // Handle ICE candidates
     pc.onicecandidate = event => {
         if (event.candidate) {
             ws.send(JSON.stringify({
@@ -54,12 +133,10 @@
         }
     };
 
-    // Display remote video
     pc.ontrack = event => {
         document.getElementById('remoteVideo').srcObject = event.streams[0];
     };
 
-    // Create offer when joining room
     pc.createOffer()
         .then(offer => pc.setLocalDescription(offer))
         .then(() => {
