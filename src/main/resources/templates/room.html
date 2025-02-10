@@ -45,7 +45,8 @@
 
 <script th:inline="javascript">
     const roomId = [[${roomId}]];
-    const ws = new WebSocket('ws://localhost:8080/signal');
+    const wsUrl = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const ws = new WebSocket(`${wsUrl}${window.location.host}/signal`);
     let pc = new RTCPeerConnection({
         iceServers: [
             { urls: 'stun:stun.l.google.com:19302' }
@@ -122,7 +123,18 @@
             await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
         }
     };
+    ws.onerror = (error) => {
+        console.error('WebSocket Error:', error);
+        alert('Connection error. Please try refreshing the page.');
+    };
 
+    ws.onclose = () => {
+        console.log('WebSocket connection closed');
+        // Attempt to reconnect
+        setTimeout(() => {
+            window.location.reload();
+        }, 3000);
+    };
     pc.onicecandidate = event => {
         if (event.candidate) {
             ws.send(JSON.stringify({
