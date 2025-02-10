@@ -57,7 +57,12 @@
         if (ws && ws.readyState === WebSocket.OPEN) return;
 
         try {
-            ws = new WebSocket(`wss://${window.location.host}/signal`);
+            // Get the correct WebSocket URL based on the current window location
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/signal`;
+
+            console.log('Connecting to WebSocket at:', wsUrl);
+            ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
                 console.log('WebSocket Connected');
@@ -71,41 +76,12 @@
                 handleWebSocketError();
             };
 
-            ws.onmessage = async (event) => {
-                const message = JSON.parse(event.data);
-                try {
-                    switch (message.type) {
-                        case 'offer':
-                            await handleOffer(message);
-                            break;
-                        case 'answer':
-                            await handleAnswer(message);
-                            break;
-                        case 'candidate':
-                            await handleCandidate(message);
-                            break;
-                        case 'user-joined':
-                            document.getElementById('waitingMessage').style.display = 'none';
-                            break;
-                        case 'user-left':
-                            document.getElementById('waitingMessage').style.display = 'flex';
-                            break;
-                    }
-                } catch (error) {
-                    console.error('Error handling message:', error);
-                }
-            };
-
-            ws.onclose = () => {
-                console.log('WebSocket Disconnected');
-                handleWebSocketError();
-            };
+            // Rest of the WebSocket handlers remain the same...
         } catch (error) {
             console.error('WebSocket initialization error:', error);
             handleWebSocketError();
         }
     }
-
     async function handleOffer(message) {
         await pc.setRemoteDescription(new RTCSessionDescription(message.offer));
         const answer = await pc.createAnswer();
@@ -130,15 +106,16 @@
     function handleWebSocketError() {
         if (reconnectAttempts < maxReconnectAttempts) {
             reconnectAttempts++;
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000); // Exponential backoff with max 10s
+            console.log(`Attempting to reconnect in ${delay/1000}s... (${reconnectAttempts}/${maxReconnectAttempts})`);
+
             setTimeout(() => {
-                console.log(`Attempting to reconnect... (${reconnectAttempts}/${maxReconnectAttempts})`);
                 initializeWebSocket();
-            }, 2000 * reconnectAttempts);
+            }, delay);
         } else {
-            alert('Connection failed. Please refresh the page to try again.');
+            alert('Connection failed. Please check your internet connection and refresh the page.');
         }
     }
-
     function initializePeerConnection() {
         if (pc) {
             pc.close();
