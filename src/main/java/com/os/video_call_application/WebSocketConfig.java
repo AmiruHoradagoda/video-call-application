@@ -11,7 +11,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(new SignalingHandler(), "/signal")
-                .setAllowedOrigins("*")
+                .setAllowedOriginPatterns("https://video-call-application-production.up.railway.app")
                 .withSockJS();
     }
 }

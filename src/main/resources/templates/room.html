@@ -50,26 +50,35 @@
     let ws;
     let isAudioMuted = false;
     let isVideoOff = false;
+    let retryCount = 0;
+    const maxRetries = 3;
 
     function initializeWebSocket() {
-        const wsUrl = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-        ws = new WebSocket(`${wsUrl}${window.location.host}/signal`);
+        if (ws && ws.readyState === WebSocket.OPEN) return;
+
+        ws = new WebSocket("wss://video-call-application-production.up.railway.app/signal");
 
         ws.onopen = () => {
             console.log('WebSocket Connected');
             initializePeerConnection();
-            ws.send(JSON.stringify({type: 'join', roomId: roomId}));
+            ws.send(JSON.stringify({ type: 'join', roomId: roomId }));
         };
 
         ws.onerror = (error) => {
             console.error('WebSocket Error:', error);
-            alert('Connection error. Attempting to reconnect...');
-            setTimeout(initializeWebSocket, 3000);
+            if (retryCount < maxRetries) {
+                retryCount++;
+                setTimeout(initializeWebSocket, 2000 * retryCount);
+            } else {
+                alert('Unable to establish connection. Please check your internet connection and try again.');
+            }
         };
 
         ws.onclose = () => {
             console.log('WebSocket connection closed');
-            setTimeout(initializeWebSocket, 3000);
+            if (retryCount < maxRetries) {
+                setTimeout(initializeWebSocket, 3000);
+            }
         };
 
         ws.onmessage = handleWebSocketMessage;
@@ -110,11 +119,7 @@
                 await pc.setRemoteDescription(new RTCSessionDescription(message.offer));
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
-                ws.send(JSON.stringify({
-                    type: 'answer',
-                    answer: answer,
-                    roomId: roomId
-                }));
+                ws.send(JSON.stringify({ type: 'answer', answer: answer, roomId: roomId }));
             } else if (message.type === 'answer') {
                 await pc.setRemoteDescription(new RTCSessionDescription(message.answer));
             } else if (message.type === 'candidate') {
@@ -127,7 +132,7 @@
 
     async function initializeMediaStream() {
         try {
-            localStream = await navigator.mediaDevices.getUserMedia({video: true, audio: true});
+            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             document.getElementById('localVideo').srcObject = localStream;
             if (pc) {
                 localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
@@ -145,33 +150,21 @@
         try {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
-            ws.send(JSON.stringify({
-                type: 'offer',
-                offer: pc.localDescription,
-                roomId: roomId
-            }));
+            ws.send(JSON.stringify({ type: 'offer', offer: pc.localDescription, roomId: roomId }));
         } catch (error) {
             console.error('Error creating offer:', error);
         }
     }
 
-    // Previous toggle functions remain the same
-
     // Initialize everything
     initializeWebSocket();
     initializeMediaStream();
 
-    // Add window unload handler
+    // Clean up
     window.onunload = () => {
-        if (localStream) {
-            localStream.getTracks().forEach(track => track.stop());
-        }
-        if (pc) {
-            pc.close();
-        }
-        if (ws) {
-            ws.close();
-        }
+        if (localStream) localStream.getTracks().forEach(track => track.stop());
+        if (pc) pc.close();
+        if (ws) ws.close();
     };
 </script>
 </body>
