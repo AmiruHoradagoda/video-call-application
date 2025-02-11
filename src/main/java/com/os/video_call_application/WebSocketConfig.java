@@ -21,9 +21,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
         registry.addHandler(signalingHandler, "/signal")
                 .setAllowedOrigins("*")
                 .withSockJS()
-                .setStreamBytesLimit(512 * 1024)
-                .setHttpMessageCacheSize(1000)
-                .setDisconnectDelay(30 * 1000);
+                .setClientLibraryUrl("https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.0/sockjs.min.js");
     }
 
     @Bean

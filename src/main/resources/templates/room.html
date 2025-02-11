@@ -29,16 +29,11 @@
 
     async function initializeWebSocket() {
         try {
-            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const host = window.location.host;
-            const wsUrl = `${wsProtocol}//${host}/signal`;
+            // For Railway.com deployment, we'll use the absolute URL
+            const wsUrl = `${window.location.protocol}//${window.location.host}/signal`;
             console.log('Connecting to WebSocket at:', wsUrl);
 
-            ws = new SockJS(wsUrl, null, {
-                transports: ['websocket', 'xhr-streaming', 'xhr-polling'],
-                timeout: 15000,
-                debug: true
-            });
+            ws = new SockJS(wsUrl);
 
             ws.onopen = () => {
                 console.log('WebSocket Connected');
@@ -93,7 +88,6 @@
             handleWebSocketError();
         }
     }
-
     function handleWebSocketError() {
         if (reconnectAttempts < maxReconnectAttempts) {
             reconnectAttempts++;
