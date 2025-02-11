@@ -8,13 +8,56 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.0/sockjs.min.js"></script>
 </head>
 <body class="bg-gray-100">
-<!-- HTML structure remains the same -->
+<!-- Error Message Container -->
+<div id="errorMessage" class="hidden fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50"></div>
+
+<div class="container mx-auto p-4">
+    <div class="bg-white rounded-lg shadow-lg p-6">
+        <!-- Header with Room ID -->
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-2xl font-bold">Room: <span th:text="${roomId}" class="text-blue-600"></span></h2>
+            <button onclick="copyRoomId()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                <i class="fas fa-copy mr-2"></i>Copy Room ID
+            </button>
+        </div>
+
+        <!-- Video Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <!-- Local Video -->
+            <div class="relative">
+                <video id="localVideo" autoplay playsinline muted class="w-full h-64 md:h-96 rounded-lg bg-black object-cover"></video>
+                <p class="absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded">You</p>
+            </div>
+            <!-- Remote Video -->
+            <div class="relative">
+                <video id="remoteVideo" autoplay playsinline class="w-full h-64 md:h-96 rounded-lg bg-black object-cover"></video>
+                <p class="absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded">Remote User</p>
+                <div id="waitingMessage" class="absolute inset-0 flex items-center justify-center text-white bg-black bg-opacity-50 rounded-lg">
+                    Waiting for someone to join...
+                </div>
+            </div>
+        </div>
+
+        <!-- Control Buttons -->
+        <div class="flex justify-center space-x-4">
+            <button onclick="toggleAudio()" id="audioBtn" class="bg-gray-500 hover:bg-gray-600 text-white w-12 h-12 rounded-full flex items-center justify-center">
+                <i class="fas fa-microphone"></i>
+            </button>
+            <button onclick="toggleVideo()" id="videoBtn" class="bg-gray-500 hover:bg-gray-600 text-white w-12 h-12 rounded-full flex items-center justify-center">
+                <i class="fas fa-video"></i>
+            </button>
+            <button onclick="endCall()" class="bg-red-500 hover:bg-red-600 text-white w-12 h-12 rounded-full flex items-center justify-center">
+                <i class="fas fa-phone-slash"></i>
+            </button>
+        </div>
+    </div>
+</div>
 
 <script th:inline="javascript">
     const roomId = [[${roomId}]];
-    let pc;
-    let localStream;
-    let ws;
+    let pc = null;
+    let localStream = null;
+    let ws = null;
     let isAudioMuted = false;
     let isVideoOff = false;
     let reconnectAttempts = 0;
@@ -22,30 +65,140 @@
 
     function showError(message) {
         const errorDiv = document.getElementById('errorMessage');
-        errorDiv.textContent = message;
-        errorDiv.classList.remove('hidden');
-        setTimeout(() => errorDiv.classList.add('hidden'), 5000);
+        if (errorDiv) {
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hidden');
+            setTimeout(() => {
+                if (errorDiv) {
+                    errorDiv.classList.add('hidden');
+                }
+            }, 5000);
+        }
+        console.error('Error:', message);
+    }
+
+    function initializePeerConnection() {
+        if (pc) {
+            pc.close();
+        }
+
+        const configuration = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                {
+                    urls: [
+                        'turn:openrelay.metered.ca:80',
+                        'turn:openrelay.metered.ca:443',
+                        'turn:openrelay.metered.ca:443?transport=tcp'
+                    ],
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                }
+            ],
+            iceCandidatePoolSize: 10
+        };
+
+        pc = new RTCPeerConnection(configuration);
+
+        pc.onicecandidate = event => {
+            if (event.candidate && ws && ws.readyState === SockJS.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'candidate',
+                    candidate: event.candidate,
+                    roomId: roomId
+                }));
+            }
+        };
+
+        pc.ontrack = event => {
+            const remoteVideo = document.getElementById('remoteVideo');
+            if (remoteVideo) {
+                remoteVideo.srcObject = event.streams[0];
+            }
+            const waitingMessage = document.getElementById('waitingMessage');
+            if (waitingMessage) {
+                waitingMessage.style.display = 'none';
+            }
+        };
+
+        pc.oniceconnectionstatechange = () => {
+            console.log('ICE Connection State:', pc.iceConnectionState);
+            if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+                const waitingMessage = document.getElementById('waitingMessage');
+                if (waitingMessage) {
+                    waitingMessage.style.display = 'flex';
+                    waitingMessage.textContent = 'Connection lost. Attempting to reconnect...';
+                }
+                handleConnectionFailure();
+            }
+        };
+
+        if (localStream) {
+            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+        }
+
+        return pc;
+    }
+
+    async function initializeMediaStream() {
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    facingMode: 'user'
+                },
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                }
+            });
+
+            const localVideo = document.getElementById('localVideo');
+            if (localVideo) {
+                localVideo.srcObject = localStream;
+            }
+
+            if (pc) {
+                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            }
+
+            return true;
+        } catch (error) {
+            console.error('Error accessing media devices:', error);
+            showError('Failed to access camera/microphone. Please check permissions.');
+            return false;
+        }
     }
 
     async function initializeWebSocket() {
         try {
-            // For Railway.com deployment, we'll use the absolute URL
             const wsUrl = `${window.location.protocol}//${window.location.host}/signal`;
             console.log('Connecting to WebSocket at:', wsUrl);
 
             ws = new SockJS(wsUrl);
 
-            ws.onopen = () => {
+            ws.onopen = async () => {
                 console.log('WebSocket Connected');
                 reconnectAttempts = 0;
                 ws.send(JSON.stringify({type: 'join', roomId: roomId}));
-                initializePeerConnection();
+
+                // Initialize peer connection and media stream
+                pc = initializePeerConnection();
+                const mediaInitialized = await initializeMediaStream();
+                if (mediaInitialized) {
+                    await createOffer();
+                }
             };
 
             ws.onmessage = async (event) => {
-                console.log('Received message:', event.data);
-                const message = JSON.parse(event.data);
                 try {
+                    const message = JSON.parse(event.data);
+                    console.log('Received message type:', message.type);
+
                     switch (message.type) {
                         case 'offer':
                             await handleOffer(message);
@@ -57,11 +210,15 @@
                             await handleCandidate(message);
                             break;
                         case 'user-joined':
-                            document.getElementById('waitingMessage').style.display = 'none';
+                            const waitingMsg = document.getElementById('waitingMessage');
+                            if (waitingMsg) waitingMsg.style.display = 'none';
                             break;
                         case 'user-left':
-                            document.getElementById('waitingMessage').style.display = 'flex';
-                            document.getElementById('waitingMessage').textContent = 'Remote user left. Waiting for someone to join...';
+                            const waitingMsgLeft = document.getElementById('waitingMessage');
+                            if (waitingMsgLeft) {
+                                waitingMsgLeft.style.display = 'flex';
+                                waitingMsgLeft.textContent = 'Remote user left. Waiting for someone to join...';
+                            }
                             break;
                         case 'error':
                             showError(message.message);
@@ -86,46 +243,6 @@
         } catch (error) {
             console.error('WebSocket initialization error:', error);
             handleWebSocketError();
-        }
-    }
-    function handleWebSocketError() {
-        if (reconnectAttempts < maxReconnectAttempts) {
-            reconnectAttempts++;
-            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
-            console.log(`Attempting to reconnect in ${delay/1000}s... (${reconnectAttempts}/${maxReconnectAttempts})`);
-
-            setTimeout(() => {
-                initializeWebSocket();
-            }, delay);
-        } else {
-            showError('Connection failed. Please refresh the page.');
-        }
-    }
-    async function initializeMediaStream() {
-        try {
-            localStream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    facingMode: 'user'
-                },
-                audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true
-                }
-            });
-
-            document.getElementById('localVideo').srcObject = localStream;
-
-            if (pc) {
-                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-            }
-
-            await createOffer();
-        } catch (error) {
-            console.error('Error accessing media devices:', error);
-            showError('Failed to access camera/microphone. Please check permissions.');
         }
     }
 
@@ -164,6 +281,20 @@
         }
     }
 
+    function handleWebSocketError() {
+        if (reconnectAttempts < maxReconnectAttempts) {
+            reconnectAttempts++;
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
+            console.log(`Attempting to reconnect in ${delay/1000}s... (${reconnectAttempts}/${maxReconnectAttempts})`);
+
+            setTimeout(() => {
+                initializeWebSocket();
+            }, delay);
+        } else {
+            showError('Connection failed. Please refresh the page.');
+        }
+    }
+
     async function createOffer() {
         if (!pc || !ws || ws.readyState !== SockJS.OPEN) return;
 
@@ -188,7 +319,7 @@
         if (pc) {
             pc.close();
         }
-        await initializePeerConnection();
+        pc = initializePeerConnection();
         await createOffer();
     }
 
@@ -256,7 +387,6 @@
     window.onload = async () => {
         try {
             await initializeWebSocket();
-            await initializeMediaStream();
         } catch (error) {
             console.error('Initialization error:', error);
             showError('Failed to initialize video call');
@@ -268,4 +398,3 @@
     };
 </script>
 </body>
-</html>
