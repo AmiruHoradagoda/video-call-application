@@ -3,51 +3,82 @@
 <head>
     <title>Video Room</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.0/sockjs.min.js"></script>
+    <style>
+        .video-container {
+            aspect-ratio: 16/9;
+        }
+        .video-element {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+    </style>
 </head>
-<body class="bg-gray-100">
+<body class="bg-gray-100 min-h-screen">
 <!-- Error Message Container -->
-<div id="errorMessage" class="hidden fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50"></div>
+<div id="errorMessage" class="hidden fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50 max-w-md"></div>
+
+<!-- Connection Status -->
+<div id="connectionStatus" class="fixed top-4 left-4 bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded z-50 hidden"></div>
 
 <div class="container mx-auto p-4">
     <div class="bg-white rounded-lg shadow-lg p-6">
         <!-- Header with Room ID -->
-        <div class="flex justify-between items-center mb-6">
-            <h2 class="text-2xl font-bold">Room: <span th:text="${roomId}" class="text-blue-600"></span></h2>
-            <button onclick="copyRoomId()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
-                <i class="fas fa-copy mr-2"></i>Copy Room ID
-            </button>
+        <div class="flex flex-col md:flex-row justify-between items-center mb-6 space-y-4 md:space-y-0">
+            <div class="flex items-center space-x-4">
+                <h2 class="text-2xl font-bold">Room: <span th:text="${roomId}" id="roomIdSpan" class="text-blue-600"></span></h2>
+                <button onclick="copyRoomId()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors duration-200">
+                    <i class="fas fa-copy mr-2"></i>Copy Room ID
+                </button>
+            </div>
+            <div id="connectionStatusBadge" class="px-3 py-1 rounded-full text-sm font-semibold hidden"></div>
         </div>
 
         <!-- Video Grid -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <!-- Local Video -->
-            <div class="relative">
-                <video id="localVideo" autoplay playsinline muted class="w-full h-64 md:h-96 rounded-lg bg-black object-cover"></video>
-                <p class="absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded">You</p>
+            <div class="relative video-container bg-black rounded-lg overflow-hidden">
+                <video id="localVideo" autoplay playsinline muted class="video-element"></video>
+                <div class="absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
+                        <span class="flex items-center">
+                            <i id="localStatusIcon" class="fas fa-circle text-green-500 mr-2"></i>
+                            You
+                        </span>
+                </div>
+                <div id="localVideoOverlay" class="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center text-white hidden">
+                    Camera Off
+                </div>
             </div>
+
             <!-- Remote Video -->
-            <div class="relative">
-                <video id="remoteVideo" autoplay playsinline class="w-full h-64 md:h-96 rounded-lg bg-black object-cover"></video>
-                <p class="absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded">Remote User</p>
-                <div id="waitingMessage" class="absolute inset-0 flex items-center justify-center text-white bg-black bg-opacity-50 rounded-lg">
+            <div class="relative video-container bg-black rounded-lg overflow-hidden">
+                <video id="remoteVideo" autoplay playsinline class="video-element"></video>
+                <div class="absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
+                        <span class="flex items-center">
+                            <i id="remoteStatusIcon" class="fas fa-circle text-gray-500 mr-2"></i>
+                            Remote User
+                        </span>
+                </div>
+                <div id="waitingMessage" class="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center text-white text-lg">
                     Waiting for someone to join...
                 </div>
             </div>
         </div>
 
         <!-- Control Buttons -->
-        <div class="flex justify-center space-x-4">
-            <button onclick="toggleAudio()" id="audioBtn" class="bg-gray-500 hover:bg-gray-600 text-white w-12 h-12 rounded-full flex items-center justify-center">
-                <i class="fas fa-microphone"></i>
+        <div class="flex justify-center items-center space-x-6">
+            <button onclick="toggleAudio()" id="audioBtn" class="bg-gray-500 hover:bg-gray-600 text-white w-14 h-14 rounded-full flex items-center justify-center transition-colors duration-200">
+                <i class="fas fa-microphone text-xl"></i>
             </button>
-            <button onclick="toggleVideo()" id="videoBtn" class="bg-gray-500 hover:bg-gray-600 text-white w-12 h-12 rounded-full flex items-center justify-center">
-                <i class="fas fa-video"></i>
+            <button onclick="toggleVideo()" id="videoBtn" class="bg-gray-500 hover:bg-gray-600 text-white w-14 h-14 rounded-full flex items-center justify-center transition-colors duration-200">
+                <i class="fas fa-video text-xl"></i>
             </button>
-            <button onclick="endCall()" class="bg-red-500 hover:bg-red-600 text-white w-12 h-12 rounded-full flex items-center justify-center">
-                <i class="fas fa-phone-slash"></i>
+            <button onclick="endCall()" class="bg-red-500 hover:bg-red-600 text-white w-14 h-14 rounded-full flex items-center justify-center transition-colors duration-200">
+                <i class="fas fa-phone-slash text-xl"></i>
             </button>
         </div>
     </div>
@@ -62,6 +93,36 @@
     let isVideoOff = false;
     let reconnectAttempts = 0;
     const maxReconnectAttempts = 5;
+    let isConnecting = false;
+
+    function updateConnectionStatus(status, isError = false) {
+        const statusBadge = document.getElementById('connectionStatusBadge');
+        const statusDiv = document.getElementById('connectionStatus');
+        if (statusBadge && statusDiv) {
+            statusBadge.textContent = status;
+            statusBadge.classList.remove('hidden', 'bg-green-100', 'bg-yellow-100', 'bg-red-100', 'text-green-700', 'text-yellow-700', 'text-red-700');
+            statusDiv.classList.remove('hidden', 'bg-green-100', 'bg-yellow-100', 'bg-red-100', 'text-green-700', 'text-yellow-700', 'text-red-700');
+
+            if (isError) {
+                statusBadge.classList.add('bg-red-100', 'text-red-700');
+                statusDiv.classList.add('bg-red-100', 'text-red-700');
+            } else if (status.includes('Connected')) {
+                statusBadge.classList.add('bg-green-100', 'text-green-700');
+                statusDiv.classList.add('bg-green-100', 'text-green-700');
+            } else {
+                statusBadge.classList.add('bg-yellow-100', 'text-yellow-700');
+                statusDiv.classList.add('bg-yellow-100', 'text-yellow-700');
+            }
+
+            statusDiv.textContent = status;
+            statusBadge.classList.remove('hidden');
+            statusDiv.classList.remove('hidden');
+
+            setTimeout(() => {
+                statusDiv.classList.add('hidden');
+            }, 5000);
+        }
+    }
 
     function showError(message) {
         const errorDiv = document.getElementById('errorMessage');
@@ -75,6 +136,104 @@
             }, 5000);
         }
         console.error('Error:', message);
+        updateConnectionStatus(message, true);
+    }
+
+    async function initializeWebSocket() {
+        if (isConnecting) return;
+        isConnecting = true;
+
+        try {
+            if (ws) {
+                ws.close();
+            }
+
+            updateConnectionStatus('Connecting...');
+            const wsUrl = window.location.origin + '/signal';
+            console.log('Connecting to WebSocket at:', wsUrl);
+
+            ws = new SockJS(wsUrl, null, {
+                transports: ['websocket', 'xhr-streaming', 'xhr-polling'],
+                timeout: 15000
+            });
+
+            ws.onopen = async () => {
+                console.log('WebSocket Connected');
+                isConnecting = false;
+                reconnectAttempts = 0;
+                updateConnectionStatus('Connected');
+
+                ws.send(JSON.stringify({
+                    type: 'join',
+                    roomId: roomId
+                }));
+
+                try {
+                    pc = await initializePeerConnection();
+                    const mediaInitialized = await initializeMediaStream();
+                    if (mediaInitialized) {
+                        await createOffer();
+                    }
+                } catch (error) {
+                    console.error('Error during initialization:', error);
+                    showError('Failed to initialize call components');
+                }
+            };
+
+            ws.onmessage = async (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    console.log('Received message type:', message.type);
+
+                    switch (message.type) {
+                        case 'offer':
+                            await handleOffer(message);
+                            break;
+                        case 'answer':
+                            await handleAnswer(message);
+                            break;
+                        case 'candidate':
+                            await handleCandidate(message);
+                            break;
+                        case 'user-joined':
+                            updateConnectionStatus('Remote user joined');
+                            document.getElementById('waitingMessage').style.display = 'none';
+                            document.getElementById('remoteStatusIcon').classList.remove('text-gray-500');
+                            document.getElementById('remoteStatusIcon').classList.add('text-green-500');
+                            break;
+                        case 'user-left':
+                            updateConnectionStatus('Remote user left');
+                            document.getElementById('waitingMessage').style.display = 'flex';
+                            document.getElementById('remoteStatusIcon').classList.remove('text-green-500');
+                            document.getElementById('remoteStatusIcon').classList.add('text-gray-500');
+                            break;
+                        case 'error':
+                            showError(message.message);
+                            break;
+                    }
+                } catch (error) {
+                    console.error('Error handling message:', error);
+                    showError('Error processing video call data');
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket Error:', error);
+                isConnecting = false;
+                handleWebSocketError();
+            };
+
+            ws.onclose = (event) => {
+                console.log('WebSocket Closed:', event.code, event.reason);
+                isConnecting = false;
+                handleWebSocketError();
+            };
+
+        } catch (error) {
+            console.error('WebSocket initialization error:', error);
+            isConnecting = false;
+            handleWebSocketError();
+        }
     }
 
     function initializePeerConnection() {
@@ -84,19 +243,21 @@
 
         const configuration = {
             iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' },
                 {
                     urls: [
-                        'turn:openrelay.metered.ca:80',
-                        'turn:openrelay.metered.ca:443',
-                        'turn:openrelay.metered.ca:443?transport=tcp'
+                        'turn:openrelay.metered.ca:80?transport=tcp',
+                        'turn:openrelay.metered.ca:443?transport=tcp',
+                        'turn:openrelay.metered.ca:443?transport=udp',
+                        'turn:openrelay.metered.ca:80?transport=udp',
+                        'stun:stun.l.google.com:19302',
+                        'stun:stun1.l.google.com:19302',
+                        'stun:stun2.l.google.com:19302'
                     ],
                     username: 'openrelayproject',
                     credential: 'openrelayproject'
                 }
             ],
+            iceTransportPolicy: 'all',
             iceCandidatePoolSize: 10
         };
 
@@ -117,20 +278,20 @@
             if (remoteVideo) {
                 remoteVideo.srcObject = event.streams[0];
             }
-            const waitingMessage = document.getElementById('waitingMessage');
-            if (waitingMessage) {
-                waitingMessage.style.display = 'none';
-            }
+            document.getElementById('waitingMessage').style.display = 'none';
+            document.getElementById('remoteStatusIcon').classList.remove('text-gray-500');
+            document.getElementById('remoteStatusIcon').classList.add('text-green-500');
         };
 
         pc.oniceconnectionstatechange = () => {
             console.log('ICE Connection State:', pc.iceConnectionState);
+            updateConnectionStatus('ICE State: ' + pc.iceConnectionState);
+
             if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-                const waitingMessage = document.getElementById('waitingMessage');
-                if (waitingMessage) {
-                    waitingMessage.style.display = 'flex';
-                    waitingMessage.textContent = 'Connection lost. Attempting to reconnect...';
-                }
+                document.getElementById('waitingMessage').style.display = 'flex';
+                document.getElementById('waitingMessage').textContent = 'Connection lost. Attempting to reconnect...';
+                document.getElementById('remoteStatusIcon').classList.remove('text-green-500');
+                document.getElementById('remoteStatusIcon').classList.add('text-gray-500');
                 handleConnectionFailure();
             }
         };
@@ -174,78 +335,6 @@
         }
     }
 
-    async function initializeWebSocket() {
-        try {
-            const wsUrl = `${window.location.protocol}//${window.location.host}/signal`;
-            console.log('Connecting to WebSocket at:', wsUrl);
-
-            ws = new SockJS(wsUrl);
-
-            ws.onopen = async () => {
-                console.log('WebSocket Connected');
-                reconnectAttempts = 0;
-                ws.send(JSON.stringify({type: 'join', roomId: roomId}));
-
-                // Initialize peer connection and media stream
-                pc = initializePeerConnection();
-                const mediaInitialized = await initializeMediaStream();
-                if (mediaInitialized) {
-                    await createOffer();
-                }
-            };
-
-            ws.onmessage = async (event) => {
-                try {
-                    const message = JSON.parse(event.data);
-                    console.log('Received message type:', message.type);
-
-                    switch (message.type) {
-                        case 'offer':
-                            await handleOffer(message);
-                            break;
-                        case 'answer':
-                            await handleAnswer(message);
-                            break;
-                        case 'candidate':
-                            await handleCandidate(message);
-                            break;
-                        case 'user-joined':
-                            const waitingMsg = document.getElementById('waitingMessage');
-                            if (waitingMsg) waitingMsg.style.display = 'none';
-                            break;
-                        case 'user-left':
-                            const waitingMsgLeft = document.getElementById('waitingMessage');
-                            if (waitingMsgLeft) {
-                                waitingMsgLeft.style.display = 'flex';
-                                waitingMsgLeft.textContent = 'Remote user left. Waiting for someone to join...';
-                            }
-                            break;
-                        case 'error':
-                            showError(message.message);
-                            break;
-                    }
-                } catch (error) {
-                    console.error('Error handling message:', error);
-                    showError('Error processing video call data');
-                }
-            };
-
-            ws.onerror = (error) => {
-                console.error('WebSocket Error:', error);
-                handleWebSocketError();
-            };
-
-            ws.onclose = (event) => {
-                console.log('WebSocket Closed:', event.code, event.reason);
-                handleWebSocketError();
-            };
-
-        } catch (error) {
-            console.error('WebSocket initialization error:', error);
-            handleWebSocketError();
-        }
-    }
-
     async function handleOffer(message) {
         try {
             await pc.setRemoteDescription(new RTCSessionDescription(message.offer));
@@ -265,6 +354,7 @@
     async function handleAnswer(message) {
         try {
             await pc.setRemoteDescription(new RTCSessionDescription(message.answer));
+            updateConnectionStatus('Call connected');
         } catch (error) {
             console.error('Error handling answer:', error);
             showError('Failed to establish connection');
@@ -277,6 +367,9 @@
                 await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
             } catch (error) {
                 console.error('Error adding ICE candidate:', error);
+                if (!pc.remoteDescription) {
+                    console.log('Remote description not set, queuing candidate');
+                }
             }
         }
     }
@@ -285,6 +378,7 @@
         if (reconnectAttempts < maxReconnectAttempts) {
             reconnectAttempts++;
             const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
+            updateConnectionStatus(`Reconnecting... Attempt ${reconnectAttempts}/${maxReconnectAttempts}`);
             console.log(`Attempting to reconnect in ${delay/1000}s... (${reconnectAttempts}/${maxReconnectAttempts})`);
 
             setTimeout(() => {
@@ -292,16 +386,21 @@
             }, delay);
         } else {
             showError('Connection failed. Please refresh the page.');
+            updateConnectionStatus('Connection failed', true);
         }
     }
 
     async function createOffer() {
-        if (!pc || !ws || ws.readyState !== SockJS.OPEN) return;
+        if (!pc || !ws || ws.readyState !== SockJS.OPEN) {
+            console.log('Cannot create offer - connection not ready');
+            return;
+        }
 
         try {
             const offer = await pc.createOffer({
                 offerToReceiveAudio: true,
-                offerToReceiveVideo: true
+                offerToReceiveVideo: true,
+                iceRestart: true
             });
             await pc.setLocalDescription(offer);
             ws.send(JSON.stringify({
@@ -316,11 +415,17 @@
     }
 
     async function handleConnectionFailure() {
+        updateConnectionStatus('Reconnecting peer connection...');
         if (pc) {
             pc.close();
         }
-        pc = initializePeerConnection();
-        await createOffer();
+        try {
+            pc = initializePeerConnection();
+            await createOffer();
+        } catch (error) {
+            console.error('Error during connection recovery:', error);
+            showError('Failed to recover connection');
+        }
     }
 
     function toggleAudio() {
@@ -331,11 +436,18 @@
             isAudioMuted = !isAudioMuted;
             audioTrack.enabled = !isAudioMuted;
             const audioBtn = document.getElementById('audioBtn');
-            audioBtn.innerHTML = isAudioMuted ?
-                '<i class="fas fa-microphone-slash"></i>' :
-                '<i class="fas fa-microphone"></i>';
-            audioBtn.classList.toggle('bg-red-500');
-            audioBtn.classList.toggle('bg-gray-500');
+
+            if (isAudioMuted) {
+                audioBtn.innerHTML = '<i class="fas fa-microphone-slash text-xl"></i>';
+                audioBtn.classList.remove('bg-gray-500');
+                audioBtn.classList.add('bg-red-500');
+                updateConnectionStatus('Microphone muted');
+            } else {
+                audioBtn.innerHTML = '<i class="fas fa-microphone text-xl"></i>';
+                audioBtn.classList.remove('bg-red-500');
+                audioBtn.classList.add('bg-gray-500');
+                updateConnectionStatus('Microphone unmuted');
+            }
         }
     }
 
@@ -347,33 +459,50 @@
             isVideoOff = !isVideoOff;
             videoTrack.enabled = !isVideoOff;
             const videoBtn = document.getElementById('videoBtn');
-            videoBtn.innerHTML = isVideoOff ?
-                '<i class="fas fa-video-slash"></i>' :
-                '<i class="fas fa-video"></i>';
-            videoBtn.classList.toggle('bg-red-500');
-            videoBtn.classList.toggle('bg-gray-500');
+            const localVideoOverlay = document.getElementById('localVideoOverlay');
+
+            if (isVideoOff) {
+                videoBtn.innerHTML = '<i class="fas fa-video-slash text-xl"></i>';
+                videoBtn.classList.remove('bg-gray-500');
+                videoBtn.classList.add('bg-red-500');
+                localVideoOverlay.classList.remove('hidden');
+                updateConnectionStatus('Camera turned off');
+            } else {
+                videoBtn.innerHTML = '<i class="fas fa-video text-xl"></i>';
+                videoBtn.classList.remove('bg-red-500');
+                videoBtn.classList.add('bg-gray-500');
+                localVideoOverlay.classList.add('hidden');
+                updateConnectionStatus('Camera turned on');
+            }
         }
     }
 
     function copyRoomId() {
-        navigator.clipboard.writeText(roomId)
-            .then(() => {
-                const copyBtn = document.querySelector('button[onclick="copyRoomId()"]');
-                const originalText = copyBtn.innerHTML;
-                copyBtn.innerHTML = '<i class="fas fa-check mr-2"></i>Copied!';
-                setTimeout(() => {
-                    copyBtn.innerHTML = originalText;
-                }, 2000);
-            })
-            .catch(err => {
-                console.error('Failed to copy room ID:', err);
-                showError('Failed to copy room ID');
-            });
+        const roomIdSpan = document.getElementById('roomIdSpan');
+        if (roomIdSpan) {
+            navigator.clipboard.writeText(roomId)
+                .then(() => {
+                    const copyBtn = document.querySelector('button[onclick="copyRoomId()"]');
+                    const originalText = copyBtn.innerHTML;
+                    copyBtn.innerHTML = '<i class="fas fa-check mr-2"></i>Copied!';
+                    updateConnectionStatus('Room ID copied to clipboard');
+                    setTimeout(() => {
+                        copyBtn.innerHTML = originalText;
+                    }, 2000);
+                })
+                .catch(err => {
+                    console.error('Failed to copy room ID:', err);
+                    showError('Failed to copy room ID');
+                });
+        }
     }
 
     function endCall() {
+        updateConnectionStatus('Ending call...');
         if (localStream) {
-            localStream.getTracks().forEach(track => track.stop());
+            localStream.getTracks().forEach(track => {
+                track.stop();
+            });
         }
         if (pc) {
             pc.close();
@@ -398,3 +527,4 @@
     };
 </script>
 </body>
+</html>
