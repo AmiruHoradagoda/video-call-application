@@ -19,9 +19,13 @@ public class WebSocketConfig implements WebSocketConfigurer {
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(signalingHandler, "/signal")
-                .setAllowedOrigins("*")
+                .setAllowedOriginPatterns("*")
                 .withSockJS()
-                .setClientLibraryUrl("https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.0/sockjs.min.js");
+                .setStreamBytesLimit(512 * 1024)
+                .setHttpMessageCacheSize(1000)
+                .setDisconnectDelay(30 * 1000L)
+                .setWebSocketEnabled(true)
+                .setHeartbeatTime(25000);
     }
 
     @Bean
@@ -30,6 +34,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
         container.setMaxTextMessageBufferSize(8192);
         container.setMaxBinaryMessageBufferSize(8192);
         container.setMaxSessionIdleTimeout(30 * 1000L);
+        container.setAsyncSendTimeout(5000L);
         return container;
     }
 }

@@ -20,6 +20,11 @@ public class SignalingHandler extends TextWebSocketHandler {
     private final Gson gson = new Gson();
 
     @Override
+    public void afterConnectionEstablished(WebSocketSession session) {
+        logger.info("Connection established: {}", session.getId());
+    }
+
+    @Override
     public void handleTextMessage(WebSocketSession session, TextMessage message) {
         try {
             SignalMessage signalMessage = gson.fromJson(message.getPayload(), SignalMessage.class);
@@ -44,6 +49,29 @@ public class SignalingHandler extends TextWebSocketHandler {
         }
     }
 
+    @Override
+    public void handleTransportError(WebSocketSession session, Throwable exception) {
+        logger.error("Transport error: ", exception);
+    }
+
+    @Override
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        logger.info("Connection closed: {} with status: {}", session.getId(), status);
+        handleUserDisconnection(session);
+    }
+
+    private void handleUserDisconnection(WebSocketSession session) {
+        rooms.forEach((roomId, roomSessions) -> {
+            if (roomSessions.containsKey(session)) {
+                roomSessions.remove(session);
+                notifyRoomParticipants(roomId, session, "user-left");
+                if (roomSessions.isEmpty()) {
+                    rooms.remove(roomId);
+                }
+            }
+        });
+    }
+
     private void handleJoinRoom(WebSocketSession session, String roomId) throws IOException {
         Map<WebSocketSession, String> roomSessions = rooms.computeIfAbsent(roomId, k -> new ConcurrentHashMap<>());
 
@@ -56,7 +84,7 @@ public class SignalingHandler extends TextWebSocketHandler {
         }
 
         roomSessions.put(session, session.getId());
-        logger.debug("User joined room: {}. Current participants: {}", roomId, roomSessions.size());
+        logger.info("User {} joined room: {}. Current participants: {}", session.getId(), roomId, roomSessions.size());
         notifyRoomParticipants(roomId, session, "user-joined");
     }
 
@@ -93,28 +121,5 @@ public class SignalingHandler extends TextWebSocketHandler {
                         }
                     });
         }
-    }
-
-    @Override
-    public void afterConnectionEstablished(WebSocketSession session) {
-        logger.debug("New WebSocket connection established: {}", session.getId());
-    }
-
-    @Override
-    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        logger.debug("WebSocket connection closed: {} with status: {}", session.getId(), status);
-
-        rooms.values().forEach(roomSessions -> {
-            if (roomSessions.containsKey(session)) {
-                String roomId = roomSessions.values().iterator().next();
-                roomSessions.remove(session);
-                try {
-                    notifyRoomParticipants(roomId, session, "user-left");
-                } catch (Exception e) {
-                    logger.error("Error handling connection close: ", e);
-                }
-            }
-        });
-        rooms.entrySet().removeIf(entry -> entry.getValue().isEmpty());
     }
 }
