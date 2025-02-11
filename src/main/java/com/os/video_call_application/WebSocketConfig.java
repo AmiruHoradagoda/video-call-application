@@ -19,15 +19,15 @@ public class WebSocketConfig implements WebSocketConfigurer {
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(signalingHandler, "/signal")
-                .setAllowedOrigins("*");
+                .setAllowedOrigins("*")
+                .withSockJS(); // Add SockJS fallback
     }
 
     @Bean
     public ServletServerContainerFactoryBean createWebSocketContainer() {
         ServletServerContainerFactoryBean container = new ServletServerContainerFactoryBean();
-        container.setMaxTextMessageBufferSize(32768);
-        container.setMaxBinaryMessageBufferSize(32768);
-        container.setMaxSessionIdleTimeout(30 * 60 * 1000L);
+        container.setMaxTextMessageBufferSize(8192);
+        container.setMaxBinaryMessageBufferSize(8192);
         return container;
     }
 }
