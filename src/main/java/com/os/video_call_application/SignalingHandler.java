@@ -24,6 +24,7 @@ public class SignalingHandler extends TextWebSocketHandler {
         try {
             SignalMessage signalMessage = gson.fromJson(message.getPayload(), SignalMessage.class);
             String roomId = signalMessage.getRoomId();
+            logger.debug("Received message type: {} for room: {}", signalMessage.getType(), roomId);
 
             if ("join".equals(signalMessage.getType())) {
                 handleJoinRoom(session, roomId);
@@ -55,6 +56,7 @@ public class SignalingHandler extends TextWebSocketHandler {
         }
 
         roomSessions.put(session, session.getId());
+        logger.debug("User joined room: {}. Current participants: {}", roomId, roomSessions.size());
         notifyRoomParticipants(roomId, session, "user-joined");
     }
 
@@ -94,7 +96,14 @@ public class SignalingHandler extends TextWebSocketHandler {
     }
 
     @Override
+    public void afterConnectionEstablished(WebSocketSession session) {
+        logger.debug("New WebSocket connection established: {}", session.getId());
+    }
+
+    @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        logger.debug("WebSocket connection closed: {} with status: {}", session.getId(), status);
+
         rooms.values().forEach(roomSessions -> {
             if (roomSessions.containsKey(session)) {
                 String roomId = roomSessions.values().iterator().next();

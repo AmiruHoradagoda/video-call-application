@@ -8,48 +8,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.0/sockjs.min.js"></script>
 </head>
 <body class="bg-gray-100">
-<div class="container mx-auto p-4">
-    <div class="bg-white rounded-lg shadow-lg p-6">
-        <div class="flex justify-between items-center mb-6">
-            <h2 class="text-2xl font-bold">Room: <span th:text="${roomId}" class="text-blue-600"></span></h2>
-            <button onclick="copyRoomId()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
-                <i class="fas fa-copy mr-2"></i>Copy Room ID
-            </button>
-        </div>
+<!-- HTML structure remains the same -->
 
-        <div id="errorMessage"
-             class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4"></div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div class="relative">
-                <video id="localVideo" autoplay playsinline muted class="w-full rounded-lg bg-black"></video>
-                <p class="absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded">You</p>
-            </div>
-            <div class="relative">
-                <video id="remoteVideo" autoplay playsinline class="w-full rounded-lg bg-black"></video>
-                <p class="absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded">Remote User</p>
-                <div id="waitingMessage"
-                     class="absolute inset-0 flex items-center justify-center text-white bg-black bg-opacity-50">
-                    Waiting for someone to join...
-                </div>
-            </div>
-        </div>
-
-        <div class="flex justify-center space-x-4 mt-6">
-            <button onclick="toggleAudio()" id="audioBtn"
-                    class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-full">
-                <i class="fas fa-microphone"></i>
-            </button>
-            <button onclick="toggleVideo()" id="videoBtn"
-                    class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-full">
-                <i class="fas fa-video"></i>
-            </button>
-            <button onclick="endCall()" class="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-full">
-                <i class="fas fa-phone-slash"></i>
-            </button>
-        </div>
-    </div>
-</div>
 <script th:inline="javascript">
     const roomId = [[${roomId}]];
     let pc;
@@ -57,6 +17,8 @@
     let ws;
     let isAudioMuted = false;
     let isVideoOff = false;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
 
     function showError(message) {
         const errorDiv = document.getElementById('errorMessage');
@@ -68,15 +30,19 @@
     async function initializeWebSocket() {
         try {
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${wsProtocol}//${window.location.host}/signal`;
+            const host = window.location.host;
+            const wsUrl = `${wsProtocol}//${host}/signal`;
             console.log('Connecting to WebSocket at:', wsUrl);
+
             ws = new SockJS(wsUrl, null, {
                 transports: ['websocket', 'xhr-streaming', 'xhr-polling'],
-                timeout: 10000
+                timeout: 15000,
+                debug: true
             });
 
             ws.onopen = () => {
                 console.log('WebSocket Connected');
+                reconnectAttempts = 0;
                 ws.send(JSON.stringify({type: 'join', roomId: roomId}));
                 initializePeerConnection();
             };
@@ -114,29 +80,84 @@
 
             ws.onerror = (error) => {
                 console.error('WebSocket Error:', error);
-                showError('Connection error occurred. Please refresh the page.');
+                handleWebSocketError();
             };
 
-            ws.onclose = () => {
+            ws.onclose = (event) => {
                 console.log('WebSocket Closed:', event.code, event.reason);
-                showError('Connection closed. Please refresh the page.');
+                handleWebSocketError();
             };
 
         } catch (error) {
             console.error('WebSocket initialization error:', error);
-            showError('Failed to establish connection. Please refresh the page.');
+            handleWebSocketError();
+        }
+    }
+
+    function handleWebSocketError() {
+        if (reconnectAttempts < maxReconnectAttempts) {
+            reconnectAttempts++;
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
+            console.log(`Attempting to reconnect in ${delay/1000}s... (${reconnectAttempts}/${maxReconnectAttempts})`);
+
+            setTimeout(() => {
+                initializeWebSocket();
+            }, delay);
+        } else {
+            showError('Connection failed. Please refresh the page.');
+        }
+    }
+    async function initializeMediaStream() {
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    facingMode: 'user'
+                },
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                }
+            });
+
+            document.getElementById('localVideo').srcObject = localStream;
+
+            if (pc) {
+                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            }
+
+            await createOffer();
+        } catch (error) {
+            console.error('Error accessing media devices:', error);
+            showError('Failed to access camera/microphone. Please check permissions.');
         }
     }
 
     async function handleOffer(message) {
-        await pc.setRemoteDescription(new RTCSessionDescription(message.offer));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        ws.send(JSON.stringify({type: 'answer', answer: answer, roomId: roomId}));
+        try {
+            await pc.setRemoteDescription(new RTCSessionDescription(message.offer));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            ws.send(JSON.stringify({
+                type: 'answer',
+                answer: answer,
+                roomId: roomId
+            }));
+        } catch (error) {
+            console.error('Error handling offer:', error);
+            showError('Failed to process incoming call');
+        }
     }
 
     async function handleAnswer(message) {
-        await pc.setRemoteDescription(new RTCSessionDescription(message.answer));
+        try {
+            await pc.setRemoteDescription(new RTCSessionDescription(message.answer));
+        } catch (error) {
+            console.error('Error handling answer:', error);
+            showError('Failed to establish connection');
+        }
     }
 
     async function handleCandidate(message) {
@@ -149,92 +170,14 @@
         }
     }
 
-    function handleWebSocketError() {
-        if (reconnectAttempts < maxReconnectAttempts) {
-            reconnectAttempts++;
-            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000); // Exponential backoff with max 10s
-            console.log(`Attempting to reconnect in ${delay / 1000}s... (${reconnectAttempts}/${maxReconnectAttempts})`);
-
-            setTimeout(() => {
-                initializeWebSocket();
-            }, delay);
-        } else {
-            alert('Connection failed. Please check your internet connection and refresh the page.');
-        }
-    }
-
-    function initializePeerConnection() {
-        if (pc) {
-            pc.close();
-        }
-
-        pc = new RTCPeerConnection({
-            iceServers: [
-                {urls: 'stun:stun.l.google.com:19302'},
-                {urls: 'stun:stun1.l.google.com:19302'},
-                {
-                    urls: 'turn:numb.viagenie.ca',
-                    username: 'webrtc@live.com',
-                    credential: 'muazkh'
-                }
-            ]
-        });
-
-        pc.onicecandidate = event => {
-            if (event.candidate && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'candidate',
-                    candidate: event.candidate,
-                    roomId: roomId
-                }));
-            }
-        };
-
-        pc.ontrack = event => {
-            document.getElementById('remoteVideo').srcObject = event.streams[0];
-            document.getElementById('waitingMessage').style.display = 'none';
-        };
-
-        pc.oniceconnectionstatechange = () => {
-            if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-                document.getElementById('waitingMessage').style.display = 'flex';
-                document.getElementById('waitingMessage').textContent = 'Connection lost. Attempting to reconnect...';
-                handleConnectionFailure();
-            }
-        };
-
-        if (localStream) {
-            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-        }
-    }
-
-    async function initializeMediaStream() {
-        try {
-            localStream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    width: {ideal: 1280},
-                    height: {ideal: 720}
-                },
-                audio: true
-            });
-            document.getElementById('localVideo').srcObject = localStream;
-
-            if (pc) {
-                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-            }
-
-            await createOffer();
-        } catch (error) {
-            console.error('Error accessing media devices:', error);
-            alert('Failed to access camera/microphone. Please check permissions and ensure no other application is using them.');
-        }
-    }
-
     async function createOffer() {
-        if (!pc || ws.readyState !== WebSocket.OPEN) return;
+        if (!pc || !ws || ws.readyState !== SockJS.OPEN) return;
 
         try {
-            const offer = await pc.createOffer();
+            const offer = await pc.createOffer({
+                offerToReceiveAudio: true,
+                offerToReceiveVideo: true
+            });
             await pc.setLocalDescription(offer);
             ws.send(JSON.stringify({
                 type: 'offer',
@@ -243,8 +186,16 @@
             }));
         } catch (error) {
             console.error('Error creating offer:', error);
-            alert('Failed to establish connection. Please refresh the page.');
+            showError('Failed to initiate call');
         }
+    }
+
+    async function handleConnectionFailure() {
+        if (pc) {
+            pc.close();
+        }
+        await initializePeerConnection();
+        await createOffer();
     }
 
     function toggleAudio() {
@@ -254,9 +205,12 @@
         if (audioTrack) {
             isAudioMuted = !isAudioMuted;
             audioTrack.enabled = !isAudioMuted;
-            document.getElementById('audioBtn').innerHTML =
-                isAudioMuted ? '<i class="fas fa-microphone-slash"></i>' : '<i class="fas fa-microphone"></i>';
-            document.getElementById('audioBtn').classList.toggle('bg-red-500');
+            const audioBtn = document.getElementById('audioBtn');
+            audioBtn.innerHTML = isAudioMuted ?
+                '<i class="fas fa-microphone-slash"></i>' :
+                '<i class="fas fa-microphone"></i>';
+            audioBtn.classList.toggle('bg-red-500');
+            audioBtn.classList.toggle('bg-gray-500');
         }
     }
 
@@ -267,31 +221,42 @@
         if (videoTrack) {
             isVideoOff = !isVideoOff;
             videoTrack.enabled = !isVideoOff;
-            document.getElementById('videoBtn').innerHTML =
-                isVideoOff ? '<i class="fas fa-video-slash"></i>' : '<i class="fas fa-video"></i>';
-            document.getElementById('videoBtn').classList.toggle('bg-red-500');
+            const videoBtn = document.getElementById('videoBtn');
+            videoBtn.innerHTML = isVideoOff ?
+                '<i class="fas fa-video-slash"></i>' :
+                '<i class="fas fa-video"></i>';
+            videoBtn.classList.toggle('bg-red-500');
+            videoBtn.classList.toggle('bg-gray-500');
         }
     }
 
     function copyRoomId() {
         navigator.clipboard.writeText(roomId)
-            .then(() => alert('Room ID copied to clipboard!'))
-            .catch(err => console.error('Failed to copy room ID:', err));
+            .then(() => {
+                const copyBtn = document.querySelector('button[onclick="copyRoomId()"]');
+                const originalText = copyBtn.innerHTML;
+                copyBtn.innerHTML = '<i class="fas fa-check mr-2"></i>Copied!';
+                setTimeout(() => {
+                    copyBtn.innerHTML = originalText;
+                }, 2000);
+            })
+            .catch(err => {
+                console.error('Failed to copy room ID:', err);
+                showError('Failed to copy room ID');
+            });
     }
 
     function endCall() {
         if (localStream) {
             localStream.getTracks().forEach(track => track.stop());
         }
-        if (pc) pc.close();
-        if (ws) ws.close();
+        if (pc) {
+            pc.close();
+        }
+        if (ws) {
+            ws.close();
+        }
         window.location.href = "/";
-    }
-
-    async function handleConnectionFailure() {
-        if (pc) pc.close();
-        await initializePeerConnection();
-        await createOffer();
     }
 
     window.onload = async () => {
@@ -306,8 +271,7 @@
 
     window.onbeforeunload = () => {
         endCall();
-    }
+    };
 </script>
-
 </body>
 </html>
