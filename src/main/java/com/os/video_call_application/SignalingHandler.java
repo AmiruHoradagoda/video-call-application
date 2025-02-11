@@ -3,6 +3,7 @@ package com.os.video_call_application;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
@@ -34,7 +35,7 @@ public class SignalingHandler extends TextWebSocketHandler {
             try {
                 session.sendMessage(new TextMessage(gson.toJson(Map.of(
                         "type", "error",
-                        "error", "Failed to process message"
+                        "message", "Failed to process message"
                 ))));
             } catch (IOException ex) {
                 logger.error("Error sending error message: ", ex);
@@ -43,8 +44,17 @@ public class SignalingHandler extends TextWebSocketHandler {
     }
 
     private void handleJoinRoom(WebSocketSession session, String roomId) throws IOException {
-        rooms.computeIfAbsent(roomId, k -> new ConcurrentHashMap<>())
-                .put(session, session.getId());
+        Map<WebSocketSession, String> roomSessions = rooms.computeIfAbsent(roomId, k -> new ConcurrentHashMap<>());
+
+        if (roomSessions.size() >= 2) {
+            session.sendMessage(new TextMessage(gson.toJson(Map.of(
+                    "type", "error",
+                    "message", "Room is full"
+            ))));
+            return;
+        }
+
+        roomSessions.put(session, session.getId());
         notifyRoomParticipants(roomId, session, "user-joined");
     }
 
@@ -84,7 +94,7 @@ public class SignalingHandler extends TextWebSocketHandler {
     }
 
     @Override
-    public void afterConnectionClosed(WebSocketSession session, org.springframework.web.socket.CloseStatus status) {
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         rooms.values().forEach(roomSessions -> {
             if (roomSessions.containsKey(session)) {
                 String roomId = roomSessions.values().iterator().next();
