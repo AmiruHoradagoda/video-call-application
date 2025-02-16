@@ -1,5 +1,6 @@
-package com.os.video_call_application;
+package com.os.video_call_application.config;
 
+import com.os.video_call_application.websocket.SignalingHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;

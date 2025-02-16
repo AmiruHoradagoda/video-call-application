@@ -1,4 +1,4 @@
-package com.os.video_call_application;
+package com.os.video_call_application.controller;
 
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.http.HttpServletRequest;

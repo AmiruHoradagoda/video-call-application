@@ -1,4 +1,4 @@
-package com.os.video_call_application;
+package com.os.video_call_application.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

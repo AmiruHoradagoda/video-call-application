@@ -1,4 +1,4 @@
-package com.os.video_call_application;
+package com.os.video_call_application.controller;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

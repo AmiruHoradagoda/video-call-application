@@ -1,4 +1,4 @@
-package com.os.video_call_application;
+package com.os.video_call_application.security;
 
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
